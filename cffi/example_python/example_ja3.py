@@ -34,21 +34,12 @@ request.restype = ctypes.c_char_p
     }
   ],
   "requestUrl": "https://tls.peet.ws/api/all",
-  "requestBody": "", // needs to be a string! so json.dumps(yourActualyRequestBody) here
+  "requestBody": "",
   "requestMethod": "GET"
-}
-
-The Response from the library looks like that:
-{
-  "sessionId": "some reusable sessionId",
-  "status": 200, //In case of an error the status code will be 0
-  "body": "The Response as string here or the error message",
-  "headers": {},
-  "cookies": {}
 }
 """
 requestPayload = {
-    "tlsClientIdentifier": "chrome_103",
+    "ja3String": "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-17513,29-23-24,0",
     "proxyUrl": "",
     "headers": {},
     "headerOrder": [],
