@@ -1,9 +1,7 @@
-package main
+package tls_client_cffi_src
 
-import "C"
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"sync"
@@ -18,133 +16,132 @@ import (
 var clientsLock = sync.Mutex{}
 var clients = make(map[string]tls_client.HttpClient)
 
-//export request
-func request(requestParams *C.char) *C.char {
-	requestParamsJson := C.GoString(requestParams)
-
-	requestInput := RequestParams{}
-	err := json.Unmarshal([]byte(requestParamsJson), &requestInput)
-
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse("", clientErr)
-	}
-
-	if requestInput.TLSClientIdentifier != "" && requestInput.CustomTlsClient != nil {
-		clientErr := NewTLSClientError(fmt.Errorf("can not built client out of client identifier and custom tls client information. Please provide only one of them"))
-		return handleResponse("", clientErr)
-	}
-
-	if requestInput.TLSClientIdentifier == "" && requestInput.CustomTlsClient == nil {
-		clientErr := NewTLSClientError(fmt.Errorf("can not built client without client identifier and without custom tls client information. Please provide at least one of them"))
-		return handleResponse("", clientErr)
-	}
-
-	tlsClient, newSessionId, err := getTlsClient(requestInput)
-
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse(newSessionId, clientErr)
-	}
-
-	req, err := buildRequest(requestInput)
-
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse(newSessionId, clientErr)
-	}
-
-	cookies := buildCookies(requestInput.RequestCookies)
-
-	if len(cookies) > 0 {
-		tlsClient.SetCookies(req.URL, cookies)
-	}
-
-	resp, err := tlsClient.Do(req)
-
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse(newSessionId, clientErr)
-	}
-
-	sessionCookies := tlsClient.GetCookies(req.URL)
-
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse(newSessionId, clientErr)
-	}
-
-	defer resp.Body.Close()
-
-	respBodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse(newSessionId, clientErr)
-	}
-
-	response := Response{
-		SessionId: newSessionId,
-		Status:    resp.StatusCode,
-		Body:      string(respBodyBytes),
-		Headers:   resp.Header,
-		Cookies:   cookiesToMap(sessionCookies),
-	}
-
-	jsonResponse, err := json.Marshal(response)
-
-	if err != nil {
-		clientErr := NewTLSClientError(err)
-		return handleResponse(newSessionId, clientErr)
-	}
-
-	return C.CString(string(jsonResponse))
-}
-
-func getTlsClient(requestInput RequestParams) (tls_client.HttpClient, string, error) {
-	clientsLock.Lock()
-	defer clientsLock.Unlock()
-
+func GetTlsClientFromInput(requestInput RequestInput) (tls_client.HttpClient, string, *TLSClientError) {
 	sessionId := requestInput.SessionId
-	tlsClientIdentifier := requestInput.TLSClientIdentifier
-	proxyUrl := requestInput.ProxyUrl
 
 	newSessionId := uuid.New().String()
 	if sessionId != nil && *sessionId != "" {
 		newSessionId = *sessionId
 	}
 
-	client, ok := clients[newSessionId]
+	if requestInput.TLSClientIdentifier != "" && requestInput.CustomTlsClient != nil {
+		clientErr := NewTLSClientError(fmt.Errorf("can not built client out of client identifier and custom tls client information. Please provide only one of them"))
+		return nil, newSessionId, clientErr
+	}
+
+	if requestInput.TLSClientIdentifier == "" && requestInput.CustomTlsClient == nil {
+		clientErr := NewTLSClientError(fmt.Errorf("can not built client without client identifier and without custom tls client information. Please provide at least one of them"))
+		return nil, newSessionId, clientErr
+	}
+
+	tlsClient, err := getTlsClient(requestInput, newSessionId)
+
+	if err != nil {
+		clientErr := NewTLSClientError(fmt.Errorf("failed to build client out of request input: %w", err))
+		return nil, newSessionId, clientErr
+	}
+
+	return tlsClient, newSessionId, nil
+}
+
+func BuildRequest(input RequestInput) (*http.Request, *TLSClientError) {
+	var tlsReq *http.Request
+	var err error
+
+	if input.RequestMethod == "" || input.RequestUrl == "" {
+		return nil, NewTLSClientError(fmt.Errorf("no request url or request method provided"))
+	}
+
+	if input.RequestBody != nil && *input.RequestBody != "" {
+		_, ok1 := input.Headers["content-type"]
+		_, ok2 := input.Headers["Content-Type"]
+
+		if !ok1 && !ok2 {
+			return nil, NewTLSClientError(fmt.Errorf("if you are using a request post body please specify a Content-Type Header"))
+		}
+
+		requestBody := bytes.NewBuffer([]byte(*input.RequestBody))
+		tlsReq, err = http.NewRequest(input.RequestMethod, input.RequestUrl, requestBody)
+	} else {
+		tlsReq, err = http.NewRequest(input.RequestMethod, input.RequestUrl, nil)
+	}
+
+	if err != nil {
+		return nil, NewTLSClientError(fmt.Errorf("failed to create request object: %w", err))
+	}
+
+	headers := http.Header{}
+
+	for key, value := range input.Headers {
+		headers[key] = []string{value}
+	}
+
+	headers[http.HeaderOrderKey] = input.HeaderOrder
+
+	tlsReq.Header = headers
+
+	return tlsReq, nil
+}
+
+func BuildResponse(sessionId string, resp *http.Response, cookies []*http.Cookie) (Response, *TLSClientError) {
+	defer resp.Body.Close()
+
+	respBodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		clientErr := NewTLSClientError(err)
+		return Response{}, clientErr
+	}
+
+	response := Response{
+		SessionId: sessionId,
+		Status:    resp.StatusCode,
+		Body:      string(respBodyBytes),
+		Headers:   resp.Header,
+		Cookies:   cookiesToMap(cookies),
+	}
+
+	return response, nil
+}
+
+func getTlsClient(requestInput RequestInput, sessionId string) (tls_client.HttpClient, error) {
+	clientsLock.Lock()
+	defer clientsLock.Unlock()
+
+	tlsClientIdentifier := requestInput.TLSClientIdentifier
+	proxyUrl := requestInput.ProxyUrl
+
+	client, ok := clients[sessionId]
 
 	if ok {
 		modifiedClient, changed, err := handleModification(client, proxyUrl, requestInput.FollowRedirects)
 		if err != nil {
-			return nil, newSessionId, fmt.Errorf("failed to modify existing client: %w", err)
+			return nil, fmt.Errorf("failed to modify existing client: %w", err)
 		}
 
 		if changed {
-			clients[newSessionId] = modifiedClient
+			clients[sessionId] = modifiedClient
 		}
 
-		return modifiedClient, newSessionId, nil
+		return modifiedClient, nil
 	}
 
 	var clientProfile tls_client.ClientProfile
-
-	if tlsClientIdentifier != "" {
-		clientProfile = getTlsClientProfile(tlsClientIdentifier)
-	}
 
 	if requestInput.CustomTlsClient != nil {
 		clientHelloId, h2Settings, h2SettingsOrder, pseudoHeaderOrder, connectionFlow, priorityFrames, err := getCustomTlsClientProfile(requestInput.CustomTlsClient)
 
 		if err != nil {
-			return nil, newSessionId, fmt.Errorf("can not build http client out of custom tls client information: %w", err)
+			return nil, fmt.Errorf("can not build http client out of custom tls client information: %w", err)
 		}
 
 		clientProfile = tls_client.NewClientProfile(clientHelloId, h2Settings, h2SettingsOrder, pseudoHeaderOrder, connectionFlow, priorityFrames)
 	}
 
-	timeoutSeconds := 30
+	if tlsClientIdentifier != "" {
+		clientProfile = getTlsClientProfile(tlsClientIdentifier)
+	}
+
+	timeoutSeconds := tls_client.DefaultTimeoutSeconds
 
 	if requestInput.TimeoutSeconds != 0 {
 		timeoutSeconds = requestInput.TimeoutSeconds
@@ -159,6 +156,10 @@ func getTlsClient(requestInput RequestParams) (tls_client.HttpClient, string, er
 		options = append(options, tls_client.WithNotFollowRedirects())
 	}
 
+	if requestInput.InsecureSkipVerify {
+		options = append(options, tls_client.WithInsecureSkipVerify())
+	}
+
 	proxy := proxyUrl
 
 	if proxy != nil && *proxy != "" {
@@ -167,9 +168,9 @@ func getTlsClient(requestInput RequestParams) (tls_client.HttpClient, string, er
 
 	tlsClient, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
 
-	clients[newSessionId] = tlsClient
+	clients[sessionId] = tlsClient
 
-	return tlsClient, newSessionId, err
+	return tlsClient, err
 }
 
 func getCustomTlsClientProfile(customClientDefinition *CustomTlsClient) (tls.ClientHelloID, map[http2.SettingID]uint32, []http2.SettingID, []string, uint32, []http2.Priority, error) {
@@ -244,56 +245,6 @@ func handleModification(client tls_client.HttpClient, proxyUrl *string, followRe
 	return client, changed, nil
 }
 
-func buildRequest(input RequestParams) (*http.Request, error) {
-	var tlsReq *http.Request
-	var err error
-
-	if input.RequestMethod == "" || input.RequestUrl == "" {
-		return nil, fmt.Errorf("no request url or request method provided")
-	}
-
-	if input.RequestBody != nil && *input.RequestBody != "" {
-		requestBody := bytes.NewBuffer([]byte(*input.RequestBody))
-		tlsReq, err = http.NewRequest(input.RequestMethod, input.RequestUrl, requestBody)
-	} else {
-		tlsReq, err = http.NewRequest(input.RequestMethod, input.RequestUrl, nil)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request object: %w", err)
-	}
-
-	headers := http.Header{
-		http.HeaderOrderKey: input.HeaderOrder,
-	}
-
-	for key, value := range input.Headers {
-		headers[key] = []string{value}
-	}
-
-	tlsReq.Header = headers
-
-	return tlsReq, nil
-}
-
-func handleResponse(sessionId string, err error) *C.char {
-	response := Response{
-		SessionId: sessionId,
-		Status:    0,
-		Body:      err.Error(),
-		Headers:   nil,
-		Cookies:   nil,
-	}
-
-	jsonResponse, err := json.Marshal(response)
-
-	if err != nil {
-		return C.CString(err.Error())
-	}
-
-	return C.CString(string(jsonResponse))
-}
-
 func cookiesToMap(cookies []*http.Cookie) map[string]string {
 	ret := make(map[string]string, 0)
 
@@ -302,24 +253,4 @@ func cookiesToMap(cookies []*http.Cookie) map[string]string {
 	}
 
 	return ret
-}
-
-func buildCookies(cookies []CookieInput) []*http.Cookie {
-	var ret []*http.Cookie
-
-	for _, cookie := range cookies {
-		ret = append(ret, &http.Cookie{
-			Name:    cookie.Name,
-			Value:   cookie.Value,
-			Path:    cookie.Path,
-			Domain:  cookie.Domain,
-			Expires: cookie.Expires.Time,
-		})
-	}
-
-	return ret
-}
-
-func main() {
-
 }

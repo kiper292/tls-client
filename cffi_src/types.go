@@ -1,4 +1,4 @@
-package main
+package tls_client_cffi_src
 
 import (
 	"encoding/json"
@@ -20,11 +20,12 @@ func (e *TLSClientError) Error() string {
 	return e.err.Error()
 }
 
-type RequestParams struct {
+type RequestInput struct {
 	SessionId           *string           `json:"sessionId"`
 	TLSClientIdentifier string            `json:"tlsClientIdentifier"`
 	CustomTlsClient     *CustomTlsClient  `json:"customTlsClient"`
 	FollowRedirects     bool              `json:"followRedirects"`
+	InsecureSkipVerify  bool              `json:"insecureSkipVerify"`
 	TimeoutSeconds      int               `json:"timeoutSeconds"`
 	ProxyUrl            *string           `json:"proxyUrl"`
 	Headers             map[string]string `json:"headers"`
