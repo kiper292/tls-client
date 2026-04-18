@@ -38,20 +38,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf || true
-          # Create symlinks if needed for gcc-13 versions (matching build.sh: armv7-linux-gnueabihf-gcc)
-          if [ ! -f /usr/bin/aarch64-linux-gnu-gcc ]; then
-            for f in /usr/bin/aarch64-linux-gnu-*-gcc /usr/bin/aarch64-linux-gnu-gcc-*-linux-gnu; do
-              [ -f "$f" ] && sudo ln -sf "$f" /usr/bin/aarch64-linux-gnu-gcc && break
-            done
-          fi
-          if [ ! -f /usr/bin/armv7-linux-gnueabihf-gcc ]; then
-            for f in /usr/bin/arm-linux-gnueabihf-*-gcc /usr/bin/armv7-linux-gnueabihf-gcc; do
-              [ -f "$f" ] && sudo ln -sf "$f" /usr/bin/armv7-linux-gnueabihf-gcc && break
-            done
-          fi
           # Verify
           which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not found"
-          which armv7-linux-gnueabihf-gcc || echo "armv7-linux-gnueabihf-gcc not found"
+          which arm-linux-gnueabihf-gcc || echo "arm-linux-gnueabihf-gcc not found"
 
       - name: Setup osxcross for macOS builds
         run: |
@@ -175,7 +164,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          cd cffi_dist && GOOS=linux GOARCH=arm CC=armv7-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-armv7-$VERSION.so .
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-armv7-$VERSION.so .
           cd .. && tar -czvf tls-client-linux-armv7-$VERSION.so.tar.gz tls-client-linux-armv7-$VERSION.so
 
       - name: Build macOS amd64 (via osxcross)
@@ -215,11 +204,11 @@ jobs:
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm64.so.tar.gz tls-client-xgo-$VERSION-linux-arm64.so
           
           # Linux ARMv6 (cross-compiler)
-          cd cffi_dist && GOOS=linux GOARCH=arm CC=armv7-linux-gnueabihf-gcc GOARM=6 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-6.so .
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=6 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-6.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-6.so.tar.gz tls-client-xgo-$VERSION-linux-arm-6.so
           
           # Linux ARMv7 (cross-compiler)
-          cd cffi_dist && GOOS=linux GOARCH=arm CC=armv7-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-7.so .
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-7.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-7.so.tar.gz tls-client-xgo-$VERSION-linux-arm-7.so
           
           # Linux s390x, ppc64le, riscv64 (native)
