@@ -39,8 +39,11 @@ jobs:
           sudo apt-get update
           # Install mingw-w64 for Windows cross-compilation (this includes both i686 and x86-64)
           sudo apt-get install -y mingw-w64 || true
-          # Install ARM cross-compilers
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf || echo "ARM cross-compilers not available"
+          # Install ARM cross-compilers - these are needed for xgo ARM builds
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+          # Verify ARM compilers are in PATH
+          which aarch64-linux-gnu-gcc || sudo update-alternatives --install /usr/bin/aarch64-linux-gnu-gcc aarch64-linux-gnu-gcc /usr/bin/aarch64-linux-gnu-13-gcc 100
+          which arm-linux-gnueabihf-gcc || sudo update-alternatives --install /usr/bin/arm-linux-gnueabihf-gcc arm-linux-gnueabihf-gcc /usr/bin/arm-linux-gnueabihf-13-gcc 100
           # Install 32-bit Linux support for xgo builds
           sudo apt-get install -y libc6-dev-i386 || true
 
