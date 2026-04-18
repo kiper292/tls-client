@@ -37,7 +37,10 @@ jobs:
       - name: Install cross-compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf mingw-w64 gcc-multilib
+          # Install mingw-w64 for Windows cross-compilation (this includes both i686 and x86-64)
+          sudo apt-get install -y mingw-w64 || true
+          # Try to install ARM cross-compilers - may fail on some systems due to package conflicts
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf || echo "ARM cross-compilers not available"
 
       - name: Determine version
         id: version
