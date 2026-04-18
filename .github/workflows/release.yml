@@ -34,10 +34,17 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Install mingw-w64 for Windows cross-compilation
+      - name: Install mingw-w64 and ARM cross-compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y mingw-w64 || true
+          sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf || true
+          # Ensure compilers are available
+          if [ ! -f /usr/bin/aarch64-linux-gnu-gcc ]; then
+            sudo apt-get install -y gcc-13-aarch64-linux-gnu || true
+          fi
+          if [ ! -f /usr/bin/arm-linux-gnueabihf-gcc ]; then
+            sudo apt-get install -y gcc-13-arm-linux-gnueabihf || true
+          fi
 
       - name: Determine version
         id: version
