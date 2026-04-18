@@ -115,16 +115,16 @@ jobs:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
           docker build -f cffi_dist/Dockerfile.ubuntu.compile -t tls-client-ubuntu .
-          docker run -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-ubuntu-amd64-$VERSION.so"
-          tar -czvf tls-client-linux-ubuntu-amd64-$VERSION.so.tar.gz tls-client-linux-ubuntu-amd64-$VERSION.so
+          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-ubuntu-amd64-$VERSION.so"
+          tar -czvf tls-client-linux-ubuntu-amd64-$VERSION.so.tar.gz cffi_dist/tls-client-linux-ubuntu-amd64-$VERSION.so
 
       - name: Build Linux Alpine amd64 (via Docker)
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
           docker build -f cffi_dist/Dockerfile.alpine.compile -t tls-client-alpine .
-          docker run -v "$PWD":/tls-client tls-client-alpine bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-alpine-amd64-$VERSION.so"
-          tar -czvf tls-client-linux-alpine-amd64-$VERSION.so.tar.gz tls-client-linux-alpine-amd64-$VERSION.so
+          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-alpine bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-alpine-amd64-$VERSION.so"
+          tar -czvf tls-client-linux-alpine-amd64-$VERSION.so.tar.gz cffi_dist/tls-client-linux-alpine-amd64-$VERSION.so
 
       - name: Build Linux ARM64 (cross-compiler)
         env:
