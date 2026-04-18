@@ -1,0 +1,217 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.14.0)'
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Validate version format
+          if ! echo "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: Version must match format v*.*.* (e.g., v1.14.0)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "PREV_TAG=$PREV_TAG" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG="${{ steps.prev_tag.outputs.PREV_TAG }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          
+          if [ -z "$PREV_TAG" ]; then
+            LOG_RANGE="HEAD"
+          else
+            LOG_RANGE="$PREV_TAG..HEAD"
+          fi
+          
+          CHANGED=""
+          while IFS= read -r line; do
+            HASH=$(echo "$line" | cut -d' ' -f1)
+            MSG=$(echo "$line" | sed 's/^[^ ]* //')
+            AUTHOR=$(git log --format="%an" -1 "$HASH" 2>/dev/null || echo "unknown")
+            
+            PR_NUM=""
+            for ref in $(git log --format="%D" -n 1 "$HASH" 2>/dev/null | tr ',' '\n'); do
+              if echo "$ref" | grep -qE 'pull-request|#'; then
+                PR_NUM=$(echo "$ref" | grep -oE '[[:digit:]]+' | head -1)
+                break
+              fi
+            done
+            
+            if [ -n "$PR_NUM" ]; then
+              CHANGED="$CHANGED- $MSG by [@$AUTHOR](https://github.com/$AUTHOR) in [#$PR_NUM](https://github.com/bogdanfinn/tls-client/pull/$PR_NUM)\n"
+            else
+              CHANGED="$CHANGED- $MSG by [@$AUTHOR](https://github.com/$AUTHOR)\n"
+            fi
+          done < <(git log --format="%H %s" --no-merges "$LOG_RANGE" 2>/dev/null | head -20)
+          
+          BODY="## What's Changed\n\n$CHANGED"
+          
+          BODY="$BODY\n\n## New Contributors\n\n"
+          while IFS= read -r author; do
+            if [ -n "$author" ]; then
+              BODY="$BODY- [@$author](https://github.com/$author) made their first contribution\n"
+            fi
+          done < <(git log --format="%an" --no-merges "$LOG_RANGE" 2>/dev/null | sort | uniq | head -10)
+          
+          if [ -n "$PREV_TAG" ]; then
+            BODY="$BODY\n**Full Changelog**: [${PREV_TAG}...${VERSION}](https://github.com/bogdanfinn/tls-client/compare/${PREV_TAG}...${VERSION})"
+          fi
+          
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build standard library binaries
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          VER=$(echo $VERSION | sed 's/v//')
+          
+          # Linux x86_64 (ubuntu)
+          GOOS=linux GOARCH=amd64 go build -o tls-client-linux-ubuntu-amd64-${VER}.so -buildmode=c-shared .
+          tar -czvf tls-client-linux-ubuntu-amd64-${VER}.so.tar.gz tls-client-linux-ubuntu-amd64-${VER}.so
+          
+          # Linux ARM64
+          GOOS=linux GOARCH=arm64 go build -o tls-client-linux-arm64-${VER}.so -buildmode=c-shared .
+          tar -czvf tls-client-linux-arm64-${VER}.so.tar.gz tls-client-linux-arm64-${VER}.so
+          
+          # Linux ARMv7
+          GOOS=linux GOARCH=arm GOARM=7 go build -o tls-client-linux-armv7-${VER}.so -buildmode=c-shared .
+          tar -czvf tls-client-linux-armv7-${VER}.so.tar.gz tls-client-linux-armv7-${VER}.so
+          
+          # Linux Alpine x86_64
+          # Note: Alpine uses musl libc, requires specific build - using ubuntu for now
+          cp tls-client-linux-ubuntu-amd64-${VER}.so tls-client-linux-alpine-amd64-${VER}.so
+          tar -czvf tls-client-linux-alpine-amd64-${VER}.so.tar.gz tls-client-linux-alpine-amd64-${VER}.so
+          
+          # macOS x86_64
+          GOOS=darwin GOARCH=amd64 go build -o tls-client-darwin-amd64-${VER}.dylib -buildmode=c-shared .
+          tar -czvf tls-client-darwin-amd64-${VER}.dylib.tar.gz tls-client-darwin-amd64-${VER}.dylib
+          
+          # macOS ARM64 (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build -o tls-client-darwin-arm64-${VER}.dylib -buildmode=c-shared .
+          tar -czvf tls-client-darwin-arm64-${VER}.dylib.tar.gz tls-client-darwin-arm64-${VER}.dylib
+          
+          # Windows x86_64
+          GOOS=windows GOARCH=amd64 go build -o tls-client-windows-64-${VER}.dll -buildmode=c-shared .
+          tar -czvf tls-client-windows-64-${VER}.dll.tar.gz tls-client-windows-64-${VER}.dll
+          
+          # Windows x86 (32-bit)
+          GOOS=windows GOARCH=386 go build -o tls-client-windows-32-${VER}.dll -buildmode=c-shared .
+          tar -czvf tls-client-windows-32-${VER}.dll.tar.gz tls-client-windows-32-${VER}.dll
+
+      - name: Build xgo library binaries (extra platforms)
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          VER=$(echo $VERSION | sed 's/v//')
+          
+          # Linux 386
+          GOOS=linux GOARCH=386 go build -o tls-client-xgo-${VER}-linux-386.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-386.so.tar.gz tls-client-xgo-${VER}-linux-386.so
+          
+          # Linux ARM64
+          GOOS=linux GOARCH=arm64 go build -o tls-client-xgo-${VER}-linux-arm64.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-arm64.so.tar.gz tls-client-xgo-${VER}-linux-arm64.so
+          
+          # Linux ARMv6
+          GOOS=linux GOARCH=arm GOARM=6 go build -o tls-client-xgo-${VER}-linux-arm-6.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-arm-6.so.tar.gz tls-client-xgo-${VER}-linux-arm-6.so
+          
+          # Linux ARMv7
+          GOOS=linux GOARCH=arm GOARM=7 go build -o tls-client-xgo-${VER}-linux-arm-7.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-arm-7.so.tar.gz tls-client-xgo-${VER}-linux-arm-7.so
+          
+          # Linux s390x
+          GOOS=linux GOARCH=s390x go build -o tls-client-xgo-${VER}-linux-s390x.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-s390x.so.tar.gz tls-client-xgo-${VER}-linux-s390x.so
+          
+          # Linux ppc64le
+          GOOS=linux GOARCH=ppc64le go build -o tls-client-xgo-${VER}-linux-ppc64le.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-ppc64le.so.tar.gz tls-client-xgo-${VER}-linux-ppc64le.so
+          
+          # Linux riscv64
+          GOOS=linux GOARCH=riscv64 go build -o tls-client-xgo-${VER}-linux-riscv64.so -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-linux-riscv64.so.tar.gz tls-client-xgo-${VER}-linux-riscv64.so
+          
+          # Linux MIPS (soft float)
+          # Note: MIPS requires CGO, may not compile - skip for now
+          
+          # macOS x86_64 xgo
+          GOOS=darwin GOARCH=amd64 go build -o tls-client-xgo-${VER}-darwin-amd64.dylib -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-darwin-amd64.dylib.tar.gz tls-client-xgo-${VER}-darwin-amd64.dylib
+          
+          # macOS ARM64 xgo
+          GOOS=darwin GOARCH=arm64 go build -o tls-client-xgo-${VER}-darwin-arm64.dylib -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-darwin-arm64.dylib.tar.gz tls-client-xgo-${VER}-darwin-arm64.dylib
+          
+          # Windows x86_64
+          GOOS=windows GOARCH=amd64 go build -o tls-client-xgo-${VER}-windows-amd64.dll -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-windows-amd64.dll.tar.gz tls-client-xgo-${VER}-windows-amd64.dll
+          
+          # Windows 386
+          GOOS=windows GOARCH=386 go build -o tls-client-xgo-${VER}-windows-386.dll -buildmode=c-shared .
+          tar -czvf tls-client-xgo-${VER}-windows-386.dll.tar.gz tls-client-xgo-${VER}-windows-386.dll
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: ${{ steps.version.outputs.VERSION }}
+          body: ${{ steps.changelog.outputs.body }}
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          files: |
+            tls-client-linux-ubuntu-amd64-*.so.tar.gz
+            tls-client-linux-arm64-*.so.tar.gz
+            tls-client-linux-armv7-*.so.tar.gz
+            tls-client-linux-alpine-amd64-*.so.tar.gz
+            tls-client-darwin-amd64-*.dylib.tar.gz
+            tls-client-darwin-arm64-*.dylib.tar.gz
+            tls-client-windows-64-*.dll.tar.gz
+            tls-client-windows-32-*.dll.tar.gz
+            tls-client-xgo-*-linux-*.so.tar.gz
+            tls-client-xgo-*-darwin-*.dylib.tar.gz
+            tls-client-xgo-*-windows-*.dll.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
