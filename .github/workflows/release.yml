@@ -38,13 +38,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf || true
-          # Ensure compilers are available
+          # Create symlinks if needed for gcc-13 versions
           if [ ! -f /usr/bin/aarch64-linux-gnu-gcc ]; then
-            sudo apt-get install -y gcc-13-aarch64-linux-gnu || true
+            for f in /usr/bin/aarch64-linux-gnu-*-gcc /usr/bin/aarch64-linux-gnu-gcc-*-linux-gnu; do
+              [ -f "$f" ] && sudo ln -sf "$f" /usr/bin/aarch64-linux-gnu-gcc && break
+            done
           fi
           if [ ! -f /usr/bin/arm-linux-gnueabihf-gcc ]; then
-            sudo apt-get install -y gcc-13-arm-linux-gnueabihf || true
+            for f in /usr/bin/arm-linux-gnueabihf-*-gcc /usr/bin/arm-linux-gnueabihf-gcc-*-linux-gnueabihf; do
+              [ -f "$f" ] && sudo ln -sf "$f" /usr/bin/arm-linux-gnueabihf-gcc && break
+            done
           fi
+          # Verify
+          which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not found"
+          which arm-linux-gnueabihf-gcc || echo "arm-linux-gnueabihf-gcc not found"
 
       - name: Determine version
         id: version
@@ -133,21 +140,19 @@ jobs:
           docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-alpine bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-alpine-amd64-$VERSION.so"
           tar -czvf tls-client-linux-alpine-amd64-$VERSION.so.tar.gz cffi_dist/tls-client-linux-alpine-amd64-$VERSION.so
 
-      - name: Build Linux ARM64 (via Docker)
+      - name: Build Linux ARM64 (cross-compiler)
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          docker build -f cffi_dist/Dockerfile.ubuntu.compile -t tls-client-ubuntu .
-          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-arm64-$VERSION.so"
-          tar -czvf tls-client-linux-arm64-$VERSION.so.tar.gz cffi_dist/tls-client-linux-arm64-$VERSION.so
+          cd cffi_dist && GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-arm64-$VERSION.so .
+          cd .. && tar -czvf tls-client-linux-arm64-$VERSION.so.tar.gz tls-client-linux-arm64-$VERSION.so
 
-      - name: Build Linux ARMv7 (via Docker)
+      - name: Build Linux ARMv7 (cross-compiler)
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          docker build -f cffi_dist/Dockerfile.ubuntu.compile -t tls-client-ubuntu .
-          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-linux-armv7-$VERSION.so"
-          tar -czvf tls-client-linux-armv7-$VERSION.so.tar.gz cffi_dist/tls-client-linux-armv7-$VERSION.so
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-linux-armv7-$VERSION.so .
+          cd .. && tar -czvf tls-client-linux-armv7-$VERSION.so.tar.gz tls-client-linux-armv7-$VERSION.so
 
       - name: Build macOS (native only possible on macOS)
         env:
@@ -176,18 +181,17 @@ jobs:
           cd cffi_dist && GOOS=linux GOARCH=386 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-386.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-386.so.tar.gz tls-client-xgo-$VERSION-linux-386.so
           
-          # Linux ARM64 (via Docker)
-          docker build -f cffi_dist/Dockerfile.ubuntu.compile -t tls-client-ubuntu .
-          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-xgo-$VERSION-linux-arm64.so"
-          tar -czvf tls-client-xgo-$VERSION-linux-arm64.so.tar.gz cffi_dist/tls-client-xgo-$VERSION-linux-arm64.so
+          # Linux ARM64 (cross-compiler)
+          cd cffi_dist && GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm64.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm64.so.tar.gz tls-client-xgo-$VERSION-linux-arm64.so
           
-          # Linux ARMv6 (via Docker)
-          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=6 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-xgo-$VERSION-linux-arm-6.so"
-          tar -czvf tls-client-xgo-$VERSION-linux-arm-6.so.tar.gz cffi_dist/tls-client-xgo-$VERSION-linux-arm-6.so
+          # Linux ARMv6 (cross-compiler)
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=6 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-6.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-6.so.tar.gz tls-client-xgo-$VERSION-linux-arm-6.so
           
-          # Linux ARMv7 (via Docker)
-          docker run -e VERSION=$VERSION -v "$PWD":/tls-client tls-client-ubuntu bash -c "cd /tls-client/cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o /tls-client/cffi_dist/tls-client-xgo-$VERSION-linux-arm-7.so"
-          tar -czvf tls-client-xgo-$VERSION-linux-arm-7.so.tar.gz cffi_dist/tls-client-xgo-$VERSION-linux-arm-7.so
+          # Linux ARMv7 (cross-compiler)
+          cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-7.so .
+          cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-7.so.tar.gz tls-client-xgo-$VERSION-linux-arm-7.so
           
           # Linux s390x, ppc64le, riscv64 (native)
           cd cffi_dist && GOOS=linux GOARCH=s390x CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-s390x.so .
