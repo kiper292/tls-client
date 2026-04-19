@@ -34,14 +34,17 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Install mingw-w64 and ARM cross-compilers
+      - name: Install cross-compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-i686-linux-gnu || true
+          sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-i686-linux-gnu gcc-s390x-linux-gnu gcc-powerpc64le-linux-gnu gcc-riscv64-linux-gnu || true
           # Verify
           which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not found"
           which arm-linux-gnueabihf-gcc || echo "arm-linux-gnueabihf-gcc not found"
           which i686-linux-gnu-gcc || echo "i686-linux-gnu-gcc not found"
+          which s390x-linux-gnu-gcc || echo "s390x-linux-gnu-gcc not found"
+          which powerpc64le-linux-gnu-gcc || echo "powerpc64le-linux-gnu-gcc not found"
+          which riscv64-linux-gnu-gcc || echo "riscv64-linux-gnu-gcc not found"
 
       - name: Setup osxcross for macOS builds
         run: |
@@ -199,14 +202,14 @@ jobs:
           cd cffi_dist && GOOS=linux GOARCH=arm CC=arm-linux-gnueabihf-gcc GOARM=7 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-arm-7.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-arm-7.so.tar.gz tls-client-xgo-$VERSION-linux-arm-7.so
           
-          # Linux s390x, ppc64le, riscv64 (native)
-          cd cffi_dist && GOOS=linux GOARCH=s390x CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-s390x.so .
+          # Linux s390x, ppc64le, riscv64 (cross-compiler)
+          cd cffi_dist && GOOS=linux GOARCH=s390x CC=s390x-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-s390x.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-s390x.so.tar.gz tls-client-xgo-$VERSION-linux-s390x.so
-          
-          cd cffi_dist && GOOS=linux GOARCH=ppc64le CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-ppc64le.so .
+
+          cd cffi_dist && GOOS=linux GOARCH=ppc64le CC=powerpc64le-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-ppc64le.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-ppc64le.so.tar.gz tls-client-xgo-$VERSION-linux-ppc64le.so
-          
-          cd cffi_dist && GOOS=linux GOARCH=riscv64 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-riscv64.so .
+
+          cd cffi_dist && GOOS=linux GOARCH=riscv64 CC=riscv64-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-riscv64.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-riscv64.so.tar.gz tls-client-xgo-$VERSION-linux-riscv64.so
           
           # macOS amd64 (via osxcross)
