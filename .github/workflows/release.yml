@@ -37,33 +37,21 @@ jobs:
       - name: Install mingw-w64 and ARM cross-compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf || true
+          sudo apt-get install -y mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-i686-linux-gnu || true
           # Verify
           which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not found"
           which arm-linux-gnueabihf-gcc || echo "arm-linux-gnueabihf-gcc not found"
+          which i686-linux-gnu-gcc || echo "i686-linux-gnu-gcc not found"
 
       - name: Setup osxcross for macOS builds
         run: |
-          # Install osxcross dependencies
-          sudo apt-get install -y clang cmake git patch python3 libssl-dev lzma-dev libxml2-dev xz-utils bzip2 cpio libbz2-dev zlib1g-dev wget
+          # Install jq for JSON parsing
+          sudo apt-get install -y jq
 
-          # Download macOS SDK (using joseluisq pre-packaged SDK)
-          cd /tmp
-          wget -q https://github.com/joseluisq/macosx-sdks/releases/download/15.0/MacOSX15.0.sdk.tar.xz
-
-          # Clone osxcross
-          cd $HOME
-          git clone --depth 1 https://github.com/tpoechtrager/osxcross.git
-          cd osxcross
-
-          # Move SDK to tarballs
-          mkdir -p tarballs
-          mv /tmp/MacOSX15.0.sdk.tar.xz tarballs/
-
-          # Build osxcross
-          UNATTENDED=1 ./build.sh
-
-          # Add osxcross to PATH
+          # Use pre-built osxcross from kiper292
+          URL=$(curl -sSL https://api.github.com/repos/kiper292/osxcross-prebuilt/releases/latest | jq -r '.assets[] | select(.name | endswith(".tar.gz")) | .browser_download_url')
+          curl -sL "$URL" -o osxcross-target.tar.gz
+          tar -xzf osxcross-target.tar.gz -C $HOME
           echo "$HOME/osxcross/target/bin" >> $GITHUB_PATH
 
       - name: Determine version
@@ -195,8 +183,8 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          # Linux 386 (native)
-          cd cffi_dist && GOOS=linux GOARCH=386 CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-386.so .
+          # Linux 386 (cross-compiler)
+          cd cffi_dist && GOOS=linux GOARCH=386 CC=i686-linux-gnu-gcc CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-linux-386.so .
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-386.so.tar.gz tls-client-xgo-$VERSION-linux-386.so
           
           # Linux ARM64 (cross-compiler)
