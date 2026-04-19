@@ -159,14 +159,14 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          cd cffi_dist && GOOS=darwin GOARCH=amd64 CC=o64-clang CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-darwin-amd64-$VERSION.dylib .
+          cd cffi_dist && GOOS=darwin GOARCH=amd64 CC=o64-clang CGO_CFLAGS="-march=x86-64" CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-darwin-amd64-$VERSION.dylib .
           cd .. && tar -czvf tls-client-darwin-amd64-$VERSION.dylib.tar.gz tls-client-darwin-amd64-$VERSION.dylib
 
       - name: Build macOS arm64 (via osxcross)
         env:
           VERSION: ${{ steps.version.outputs.VER }}
         run: |
-          cd cffi_dist && GOOS=darwin GOARCH=arm64 CC=oa64-clang CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-darwin-arm64-$VERSION.dylib .
+          cd cffi_dist && GOOS=darwin GOARCH=arm64 CC=oa64-clang CGO_CFLAGS="-march=armv8-a" CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-darwin-arm64-$VERSION.dylib .
           cd .. && tar -czvf tls-client-darwin-arm64-$VERSION.dylib.tar.gz tls-client-darwin-arm64-$VERSION.dylib
 
       - name: Build Windows (cross-compiler)
@@ -210,11 +210,11 @@ jobs:
           cd .. && tar -czvf tls-client-xgo-$VERSION-linux-riscv64.so.tar.gz tls-client-xgo-$VERSION-linux-riscv64.so
           
           # macOS amd64 (via osxcross)
-          cd cffi_dist && GOOS=darwin GOARCH=amd64 CC=o64-clang CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-darwin-amd64.dylib .
+          cd cffi_dist && GOOS=darwin GOARCH=amd64 CC=o64-clang CGO_CFLAGS="-march=x86-64" CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-darwin-amd64.dylib .
           cd .. && tar -czvf tls-client-xgo-$VERSION-darwin-amd64.dylib.tar.gz tls-client-xgo-$VERSION-darwin-amd64.dylib
-          
+
           # macOS arm64 (via osxcross)
-          cd cffi_dist && GOOS=darwin GOARCH=arm64 CC=oa64-clang CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-darwin-arm64.dylib .
+          cd cffi_dist && GOOS=darwin GOARCH=arm64 CC=oa64-clang CGO_CFLAGS="-march=armv8-a" CGO_ENABLED=1 go build -buildmode=c-shared -buildvcs=false -o ../tls-client-xgo-$VERSION-darwin-arm64.dylib .
           cd .. && tar -czvf tls-client-xgo-$VERSION-darwin-arm64.dylib.tar.gz tls-client-xgo-$VERSION-darwin-arm64.dylib
           
           # Windows (cross-compiler)
