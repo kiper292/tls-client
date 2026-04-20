@@ -104,8 +104,9 @@ jobs:
               fi
             done
             
+REPO="${{ github.repository }}"
             if [ -n "$PR_NUM" ]; then
-              CHANGED="$CHANGED- $MSG by [@$AUTHOR](https://github.com/$AUTHOR) in [#$PR_NUM](https://github.com/bogdanfinn/tls-client/pull/$PR_NUM)\n"
+              CHANGED="$CHANGED- $MSG by [@$AUTHOR](https://github.com/$AUTHOR) in [#$PR_NUM](https://github.com/$REPO/pull/$PR_NUM)\n"
             else
               CHANGED="$CHANGED- $MSG by [@$AUTHOR](https://github.com/$AUTHOR)\n"
             fi
@@ -121,7 +122,7 @@ jobs:
           done < <(git log --format="%an" --no-merges "$LOG_RANGE" 2>/dev/null | sort | uniq | head -10)
           
           if [ -n "$PREV_TAG" ]; then
-            BODY="$BODY\n**Full Changelog**: [${PREV_TAG}...${VERSION}](https://github.com/bogdanfinn/tls-client/compare/${PREV_TAG}...${VERSION})"
+            BODY="$BODY\n**Full Changelog**: [${PREV_TAG}...${VERSION}](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION})"
           fi
           
           echo "body<<EOF" >> $GITHUB_OUTPUT
