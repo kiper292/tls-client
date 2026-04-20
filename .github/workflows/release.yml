@@ -103,8 +103,8 @@ jobs:
                 break
               fi
             done
-            
-REPO="${{ github.repository }}"
+
+            REPO="${{ github.repository }}"
             if [ -n "$PR_NUM" ]; then
               CHANGED="$CHANGED- $MSG by [@$AUTHOR](https://github.com/$AUTHOR) in [#$PR_NUM](https://github.com/$REPO/pull/$PR_NUM)\n"
             else
